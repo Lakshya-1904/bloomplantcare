@@ -1,0 +1,93 @@
+{
+  "version": "8",
+  "dialect": "postgres",
+  "id": "91f2265e-d96b-46ad-a244-1293457300e5",
+  "prevIds": [
+    "00000000-0000-0000-0000-000000000000"
+  ],
+  "ddl": [
+    {
+      "isRlsEnabled": false,
+      "name": "watering_schedules",
+      "entityType": "tables",
+      "schema": "public"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "browser_id",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "watering_schedules"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "plant_id",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "watering_schedules"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "date",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "watering_schedules"
+    },
+    {
+      "type": "text",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "time",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "watering_schedules"
+    },
+    {
+      "type": "integer",
+      "typeSchema": null,
+      "notNull": true,
+      "dimensions": 0,
+      "default": null,
+      "generated": null,
+      "identity": null,
+      "name": "interval",
+      "entityType": "columns",
+      "schema": "public",
+      "table": "watering_schedules"
+    },
+    {
+      "columns": [
+        "browser_id",
+        "plant_id"
+      ],
+      "nameExplicit": false,
+      "name": "watering_schedules_pkey",
+      "entityType": "pks",
+      "schema": "public",
+      "table": "watering_schedules"
+    }
+  ],
+  "renames": []
+}

@@ -1,3 +1,5 @@
+let wateringSchedules=[],schedulesReady=false;
+function scheduledDate(p){const schedule=wateringSchedules.find(s=>s.plantId===String(p.id));if(schedule)return new Date(schedule.date+"T"+schedule.time+":00");const date=new Date(p.last+"T09:00:00");date.setDate(date.getDate()+p.interval);return date}
 
 const $=id=>document.getElementById(id),today=()=>{const now=new Date();return `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}-${String(now.getDate()).padStart(2,"0")}`},diff=(a,b)=>Math.floor((new Date(b+'T12:00:00')-new Date(a+'T12:00:00'))/86400000);
 const initial=[{id:1,name:"Misty",type:"Houseplant",emoji:"🪴",interval:6,last:today()},{id:2,name:"Sunny",type:"Flower",emoji:"🌻",interval:3,last:today()},{id:3,name:"Minty",type:"Herb",emoji:"🌿",interval:2,last:today()}];
@@ -6,7 +8,7 @@ const validDate=value=>typeof value==="string"&&/^\d{4}-\d{2}-\d{2}$/.test(value
 const safePhoto=value=>typeof value==="string"&&value.length<=2800000&&/^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(value);
 function readSaved(key,fallback,valid){try{const raw=localStorage.getItem(key);if(raw===null)return fallback;const data=JSON.parse(raw);if(!Array.isArray(data)||!data.every(valid))throw Error();return data}catch{notify("Some saved data is unavailable or invalid. Bloom is showing a safe starting view.");return fallback}}
 let plants=readSaved("bloomPlants",initial,p=>p&&Number.isSafeInteger(p.id)&&typeof p.name==="string"&&p.name.length<=100&&typeof p.type==="string"&&typeof p.emoji==="string"&&Number.isInteger(p.interval)&&p.interval>=1&&p.interval<=60&&validDate(p.last)),diary=readSaved("bloomDiary",[],e=>e&&typeof e.plant==="string"&&typeof e.note==="string"&&e.note.length<=4000&&validDate(e.date)&&(!e.photo||safePhoto(e.photo)));
-const save=()=>{try{localStorage.setItem("bloomPlants",JSON.stringify(plants));localStorage.setItem("bloomDiary",JSON.stringify(diary));return true}catch{notify("Your latest change could not be saved. Browser storage may be full or blocked. Keep a separate copy before leaving this page.");return false}},due=p=>diff(p.last,today())>=+p.interval,left=p=>Math.max(0,+p.interval-diff(p.last,today()));
+const save=()=>{try{localStorage.setItem("bloomPlants",JSON.stringify(plants));localStorage.setItem("bloomDiary",JSON.stringify(diary));return true}catch{notify("Your latest change could not be saved. Browser storage may be full or blocked. Keep a separate copy before leaving this page.");return false}},due=p=>scheduledDate(p)<=new Date(),left=p=>Math.max(0,Math.round((new Date(scheduledDate(p).getFullYear(),scheduledDate(p).getMonth(),scheduledDate(p).getDate())-new Date(today()+"T00:00:00"))/86400000));
 const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 function render(){$("plantCount").textContent=plants.length;$("dueCount").textContent=plants.filter(due).length;$("diaryCount").textContent=diary.length;
 $("plantGrid").innerHTML=plants.length?plants.map(p=>`<article class="card"><div class="planttop"><div class="plantemoji">${esc(p.emoji)}</div><span class="pill ${due(p)?'due':''}">${due(p)?'💧 Water check':'🌿 Growing'}</span></div><h4>${esc(p.name)}</h4><div class="muted">${esc(p.type)}</div><div class="care"><span>${due(p)?'Water may be due':'Next water check'}</span><b>${due(p)?'Today':left(p)+' day(s)'}</b></div><div class="bar"><span style="width:${Math.min(100,Math.max(5,diff(p.last,today())/p.interval*100))}%"></span></div><div class="rowbtn"><button class="primary small" data-action="water" data-id="${p.id}">💧 Watered</button><button class="secondary small" data-action="chat" data-id="${p.id}">💬 Chat</button></div></article>`).join(""):`<div class="empty" style="grid-column:1/-1"><div>🪴</div><b>Your garden is waiting!</b><p>Add your first plant buddy.</p></div>`;
@@ -15,7 +17,7 @@ $("diaryList").innerHTML=diary.length?diary.slice().reverse().map(e=>`<div class
 renderReminderList();
 $("dPlant").innerHTML=plants.map(p=>`<option>${esc(p.name)}</option>`).join("")}
 $("plantGrid").addEventListener("click",event=>{const b=event.target.closest("button[data-action]");if(!b)return;const id=Number(b.dataset.id);if(b.dataset.action==="water")water(id);else chat(id)});
-window.water=id=>{let p=plants.find(x=>x.id===id);if(!p)return;p.last=today();save();render();chat(id,"Thank you for giving me a drink! 💧")};
+window.water=async id=>{let p=plants.find(x=>x.id===id);if(!p)return;const schedule=wateringSchedules.find(s=>s.plantId===String(id));if(schedule){const next=new Date(today()+"T12:00:00");next.setDate(next.getDate()+schedule.interval);const date=`${next.getFullYear()}-${String(next.getMonth()+1).padStart(2,"0")}-${String(next.getDate()).padStart(2,"0")}`;try{await storeSchedule({...schedule,date})}catch{notify("Could not update the reminder. Try Watered again when you are connected.");return}}p.last=today();save();render();chat(id,"Thank you for giving me a drink! 💧")};
 window.chat=(id,msg)=>{let p=plants.find(x=>x.id===id);if(!p)return;$("talkName").textContent=p.name+" says:";$("talkText").textContent=msg||(due(p)?"Psst… I might be ready for a little water! 💦":"I'm feeling leafy and lovely today! 🌿");document.querySelector(".talk").scrollIntoView({behavior:"smooth",block:"nearest"})};
 let lastFocus;function open(id){lastFocus=document.activeElement;$(id).classList.add("show");$(id).querySelector("input,select,textarea,button")?.focus()}function close(id){$(id).classList.remove("show");lastFocus?.focus()}function add(){ $("pName").value="";$("pLast").value=today();$("pInterval").value=5;open("plantModal")}
 ["addTop","heroAdd","addHome"].forEach(id=>$(id).onclick=add);document.querySelectorAll("[data-close]").forEach(b=>b.onclick=()=>close(b.dataset.close));
@@ -41,9 +43,9 @@ document.addEventListener("keydown",event=>{if(event.key!=="Tab")return;const mo
 // Sound and delivery state last only for this open page.
 let audioContext, soundEnabled=false, desktopEnabled=false;
 const remindedChecks=new Set();
-function nextWateringDate(p){const date=new Date(p.last+"T12:00:00");date.setDate(date.getDate()+p.interval);return date.toLocaleDateString(undefined,{month:"short",day:"numeric",year:"numeric"})}
+function nextWateringDate(p){return scheduledDate(p).toLocaleString(undefined,{month:"short",day:"numeric",year:"numeric",hour:"numeric",minute:"2-digit"})}
 function renderReminderList(){
-  $("reminderPlants").innerHTML=plants.length?plants.slice().sort((a,b)=>left(a)-left(b)).map(p=>`<div class="reminder-item"><div><strong>${esc(p.name)}</strong><p class="featuretext">${due(p)?'Watering check due now':`Next watering check: ${esc(nextWateringDate(p))}`} · Every ${p.interval} day(s)</p></div><button class="${due(p)?'primary':'secondary'} small" data-water-id="${p.id}">Watered</button></div>`).join(""):'<p class="featuretext">Add a plant and choose its watering interval to start receiving reminders.</p>';
+  $("reminderPlants").innerHTML=plants.length?plants.slice().sort((a,b)=>left(a)-left(b)).map(p=>`<div class="reminder-item"><div><strong>${esc(p.name)}</strong><p class="featuretext">${due(p)?'Watering check due now':`Next watering check: ${esc(nextWateringDate(p))}`} · Every ${wateringSchedules.find(s=>s.plantId===String(p.id))?.interval||p.interval} day(s)</p></div><div class="reminder-controls"><button class="secondary small" data-edit-reminder="${p.id}">Edit reminder</button><button class="${due(p)?'primary':'secondary'} small" data-water-id="${p.id}">Watered</button></div></div>`).join(""):'<p class="featuretext">Add a plant and choose its watering interval to start receiving reminders.</p>';
   const ready=plants.filter(due);
   if(!ready.length)$("wateringAlert").hidden=true;
   else $("wateringMessage").textContent="Watering check due for "+ready.map(p=>p.name).join(", ")+". Check the soil and water if dry.";
@@ -54,7 +56,8 @@ function ring(){if(!audioContext||audioContext.state!=="running")return false;co
 const visibleChecks=new Set(),notifiedChecks=new Set();
 function checkReminders(){
   renderReminderList();
-  const ready=plants.filter(due),key=p=>`${p.id}:${p.last}`;
+  if(!schedulesReady)return;
+  const ready=plants.filter(due),key=p=>`${p.id}:${p.last}:${scheduledDate(p).getTime()}`;
   if(!ready.length)return;
   if(ready.some(p=>!visibleChecks.has(key(p)))){
     $("wateringAlert").hidden=false;
@@ -89,3 +92,32 @@ $("reminderJump").onclick=()=>{
   $("reminders").scrollIntoView({behavior:"smooth",block:"start"});
   $("enableSound").focus({preventScroll:true});
 };
+
+let editingReminder;
+async function storeSchedule(schedule){
+  const response=await fetch('/api/watering-schedules',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(schedule)});
+  if(!response.ok)throw Error('save');
+  const saved=await response.json();wateringSchedules=wateringSchedules.filter(s=>s.plantId!==saved.plantId).concat(saved);
+}
+$("reminderPlants").addEventListener('click',event=>{
+  const button=event.target.closest('[data-edit-reminder]');if(!button)return;
+  if(!schedulesReady){notify('Reminders are not loaded. Reload Bloom to try again.');return}
+  const plant=plants.find(p=>String(p.id)===button.dataset.editReminder);if(!plant)return;
+  editingReminder=plant;const schedule=wateringSchedules.find(s=>s.plantId===String(plant.id));
+  $("reminderPlantName").textContent=plant.name;
+  const next=scheduledDate(plant);const future=next>new Date()?next:new Date(Date.now()+3600000);
+  $("reminderDate").value=schedule?.date||`${future.getFullYear()}-${String(future.getMonth()+1).padStart(2,'0')}-${String(future.getDate()).padStart(2,'0')}`;
+  $("reminderTime").value=schedule?.time||`${String(future.getHours()).padStart(2,'0')}:${String(future.getMinutes()).padStart(2,'0')}`;
+  $("reminderInterval").value=schedule?.interval||plant.interval;$("reminderError").textContent='';open('reminderModal');
+});
+$("reminderForm").onsubmit=async event=>{
+  event.preventDefault();const date=$("reminderDate").value,time=$("reminderTime").value,interval=Number($("reminderInterval").value);
+  const next=new Date(date+'T'+time+':00');
+  if(!Number.isFinite(next.getTime())||next<=new Date()||!Number.isInteger(interval)||interval<1||interval>60){$("reminderError").textContent='Choose a future date and time and an interval of 1–60 days.';return}
+  const [hour,minute]=time.split(':').map(Number);if(next.getHours()!==hour||next.getMinutes()!==minute){$("reminderError").textContent='That time is skipped by a clock change. Choose another time.';return}
+  $("saveReminder").disabled=true;
+  try{await storeSchedule({plantId:String(editingReminder.id),date,time,interval});render();checkReminders();close('reminderModal');notify('Watering reminder saved. Enable ringtone and keep Bloom open to hear it.');}
+  catch{$("reminderError").textContent='Could not save the reminder. Check your connection and try again.'}
+  finally{$("saveReminder").disabled=false}
+};
+fetch('/api/watering-schedules').then(response=>{if(!response.ok)throw Error('load');return response.json()}).then(rows=>{wateringSchedules=rows;schedulesReady=true;render();checkReminders()}).catch(()=>notify('Saved reminders could not load. Reload Bloom to try again.'));
