@@ -52,3 +52,53 @@ $("dismissReminder").onclick=()=>{$("wateringAlert").hidden=true};
 setInterval(()=>{render();checkReminders()},60000);
 document.addEventListener("visibilitychange",()=>{if(!document.hidden){render();checkReminders()}});
 render();
+
+// Calendar files delegate delivery to the user's calendar, including when Bloom is closed.
+$("reminderJump").onclick=()=>{
+  $("carePlantOptions").innerHTML=plants.map(p=>`<option value="${esc(p.name)}"></option>`).join("");
+  $("reminders").scrollIntoView({behavior:"smooth",block:"start"});
+  $("carePlant").focus({preventScroll:true});
+};
+$("carePlantOptions").innerHTML=plants.map(p=>`<option value="${esc(p.name)}"></option>`).join("");
+$("careDate").value=today();
+$("careDate").min=today();
+$("careTimezone").textContent="Date and time use this device’s time zone: "+Intl.DateTimeFormat().resolvedOptions().timeZone+". Repeating reminders keep the same local clock time in your calendar.";
+$("careTask").onchange=()=>{
+  const custom=$("careTask").value==="Custom task";
+  $("customTaskField").hidden=!custom;
+  $("careCustomTask").required=custom;
+};
+function calendarText(value){return String(value).replace(/\\/g,"\\\\").replace(/\r\n|\r|\n/g,"\\n").replace(/;/g,"\\;").replace(/,/g,"\\,")}
+function calendarFold(line){
+  // RFC 5545 limits content lines to 75 UTF-8 octets, including continuation spaces.
+  const encoder=new TextEncoder();let result="",length=0;
+  for(const char of line){const size=encoder.encode(char).length;if(length+size>75){result+="\r\n ";length=1}result+=char;length+=size}
+  return result;
+}
+function careCalendar({plant,task,date,time,repeat,minutes,uid,now=new Date()}){
+  const localStart=date.replace(/-/g,"")+"T"+time.replace(":","")+"00";
+  const title=calendarText(task+" · "+plant);
+  const lines=["BEGIN:VCALENDAR","VERSION:2.0","PRODID:-//Bloom//Plant Care//EN","CALSCALE:GREGORIAN","BEGIN:VEVENT","UID:"+uid+"@bloomplantcare.netlify.app","DTSTAMP:"+now.toISOString().replace(/[-:]/g,"").replace(/\.\d{3}/,""),"DTSTART:"+localStart,"DURATION:PT15M","SUMMARY:"+title,"DESCRIPTION:"+calendarText("Plant: "+plant+"\nTask: "+task+"\nCheck your plant’s needs before taking action. Created with Bloom."),"TRANSP:TRANSPARENT"];
+  if(repeat!=="none")lines.push("RRULE:FREQ="+repeat);
+  lines.push("BEGIN:VALARM","ACTION:DISPLAY","DESCRIPTION:"+title,"TRIGGER:"+(minutes===0?"PT0S":"-PT"+minutes+"M"),"END:VALARM","END:VEVENT","END:VCALENDAR");
+  return lines.map(calendarFold).join("\r\n")+"\r\n";
+}
+$("careReminderForm").onsubmit=event=>{
+  event.preventDefault();
+  const plant=$("carePlant").value.trim(),task=$("careTask").value==="Custom task"?$("careCustomTask").value.trim():$("careTask").value;
+  const date=$("careDate").value,time=$("careTime").value;
+  const start=new Date(date+"T"+time+":00");
+  if(!plant||!task||!Number.isFinite(start.getTime())||start<=new Date()){
+    $("careStatus").textContent="Enter a plant, a care task, and a future date and time.";return;
+  }
+  // Detect local times that do not exist during a daylight-saving clock change.
+  const [hour,minute]=time.split(":").map(Number);
+  if(start.getHours()!==hour||start.getMinutes()!==minute){$("careStatus").textContent="That local time is skipped by a clock change. Choose another time.";return}
+  try{
+    const content=careCalendar({plant,task,date,time,repeat:$("careRepeat").value,minutes:Number($("careAlert").value),uid:crypto.randomUUID()});
+    const url=URL.createObjectURL(new Blob([content],{type:"text/calendar;charset=utf-8"}));
+    const link=document.createElement("a");link.href=url;link.download="bloom-care-reminder.ics";document.body.append(link);link.click();link.remove();
+    setTimeout(()=>URL.revokeObjectURL(url),60000);
+    $("careStatus").textContent="Calendar file prepared. Open or import bloom-care-reminder.ics and save the event to activate your reminder. Check that the alert is enabled in your calendar.";
+  }catch{$("careStatus").textContent="The calendar file could not be created. Please try again in a browser that supports file downloads."}
+};
