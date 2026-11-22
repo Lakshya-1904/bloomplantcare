@@ -41,64 +41,51 @@ document.addEventListener("keydown",event=>{if(event.key!=="Tab")return;const mo
 // Sound and delivery state last only for this open page.
 let audioContext, soundEnabled=false, desktopEnabled=false;
 const remindedChecks=new Set();
-function renderReminderList(){const ready=plants.filter(due);$("reminderPlants").innerHTML=ready.length?ready.map(p=>`<div class="reminder-item"><strong>${esc(p.name)}</strong><span>Soil check due</span></div>`).join(""):'<p class="featuretext">All caught up. No watering checks are due.</p>';if(!ready.length)$("wateringAlert").hidden=true}
+function nextWateringDate(p){const date=new Date(p.last+"T12:00:00");date.setDate(date.getDate()+p.interval);return date.toLocaleDateString(undefined,{month:"short",day:"numeric",year:"numeric"})}
+function renderReminderList(){
+  $("reminderPlants").innerHTML=plants.length?plants.slice().sort((a,b)=>left(a)-left(b)).map(p=>`<div class="reminder-item"><div><strong>${esc(p.name)}</strong><p class="featuretext">${due(p)?'Watering check due now':`Next watering check: ${esc(nextWateringDate(p))}`} · Every ${p.interval} day(s)</p></div><button class="${due(p)?'primary':'secondary'} small" data-water-id="${p.id}">Watered</button></div>`).join(""):'<p class="featuretext">Add a plant and choose its watering interval to start receiving reminders.</p>';
+  const ready=plants.filter(due);
+  if(!ready.length)$("wateringAlert").hidden=true;
+  else $("wateringMessage").textContent="Watering check due for "+ready.map(p=>p.name).join(", ")+". Check the soil and water if dry.";
+}
+$("reminderPlants").addEventListener("click",event=>{const button=event.target.closest("button[data-water-id]");if(button)water(Number(button.dataset.waterId))});
 async function prepareAudio(){const Audio=window.AudioContext||window.webkitAudioContext;if(!Audio)throw Error("unsupported");if(!audioContext)audioContext=new Audio();if(audioContext.state!=="running")await audioContext.resume();if(audioContext.state!=="running")throw Error("blocked")}
 function ring(){if(!audioContext||audioContext.state!=="running")return false;const start=audioContext.currentTime;[659.25,783.99,987.77,783.99].forEach((frequency,i)=>{const oscillator=audioContext.createOscillator(),gain=audioContext.createGain(),at=start+i*.26;oscillator.type="sine";oscillator.frequency.value=frequency;gain.gain.setValueAtTime(0,at);gain.gain.linearRampToValueAtTime(.14,at+.025);gain.gain.exponentialRampToValueAtTime(.001,at+.4);oscillator.connect(gain);gain.connect(audioContext.destination);oscillator.start(at);oscillator.stop(at+.42)});return true}
-function checkReminders(){renderReminderList();if(!soundEnabled)return;const ready=plants.filter(p=>due(p)&&!remindedChecks.has(`${p.id}:${p.last}`));if(!ready.length)return;const message=ready.map(p=>p.name).join(", ")+": check the soil before watering.";$("wateringMessage").textContent=message;$("wateringAlert").hidden=false;if(!ring()){$("soundStatus").textContent="Sound is paused by your browser. Press Enable ringtone to resume.";soundEnabled=false;$("enableSound").textContent="Enable ringtone";$("enableSound").setAttribute("aria-pressed","false");return}ready.forEach(p=>remindedChecks.add(`${p.id}:${p.last}`));if(desktopEnabled&&"Notification" in window&&Notification.permission==="granted"){try{const n=new Notification("Bloom · Watering check",{body:message,tag:"bloom-watering",silent:true});n.onclick=()=>{window.focus();showView("home");$("home").scrollIntoView({block:"start"});n.close()}}catch{$("soundStatus").textContent="Ringtone is on. Browser notifications are unavailable; reminders appear in Bloom."}}}
+const visibleChecks=new Set(),notifiedChecks=new Set();
+function checkReminders(){
+  renderReminderList();
+  const ready=plants.filter(due),key=p=>`${p.id}:${p.last}`;
+  if(!ready.length)return;
+  if(ready.some(p=>!visibleChecks.has(key(p)))){
+    $("wateringAlert").hidden=false;
+    ready.forEach(p=>visibleChecks.add(key(p)));
+  }
+  const message="Watering check due for "+ready.map(p=>p.name).join(", ")+". Check the soil and water if dry.";
+  if(soundEnabled&&ready.some(p=>!remindedChecks.has(key(p)))){
+    if(ring())ready.forEach(p=>remindedChecks.add(key(p)));
+    else{
+      soundEnabled=false;$("enableSound").textContent="Enable ringtone";$("enableSound").setAttribute("aria-pressed","false");
+      $("soundStatus").textContent="Sound is paused by your browser. Press Enable ringtone to resume.";
+    }
+  }
+  if(desktopEnabled&&"Notification" in window&&Notification.permission==="granted"&&ready.some(p=>!notifiedChecks.has(key(p)))){
+    try{
+      const n=new Notification("Bloom · Time to check watering",{body:message,tag:"bloom-watering",silent:soundEnabled});
+      ready.forEach(p=>notifiedChecks.add(key(p)));
+      n.onclick=()=>{window.focus();showView("home");$("home").scrollIntoView({block:"start"});n.close()};
+    }catch{$("soundStatus").textContent="Browser notifications are unavailable. Watering reminders still appear in Bloom."}
+  }
+}
 $("enableSound").onclick=async()=>{if(soundEnabled){soundEnabled=false;$("enableSound").textContent="Enable ringtone";$("enableSound").setAttribute("aria-pressed","false");$("soundStatus").textContent="Ringtone is off.";return}try{await prepareAudio();soundEnabled=true;$("enableSound").textContent="Turn ringtone off";$("enableSound").setAttribute("aria-pressed","true");$("soundStatus").textContent="Ringtone is on for this visit. Each due watering check rings once.";checkReminders()}catch{$("soundStatus").textContent="Sound could not start. Check browser audio permissions and try again."}};
 $("testSound").onclick=async()=>{try{await prepareAudio();ring();$("soundStatus").textContent="Test ringtone played. Ringtone reminders are "+(soundEnabled?"on.":"off; enable them to receive watering reminders.")}catch{$("soundStatus").textContent="Sound is unavailable. Check browser audio permissions and device volume."}};
-$("desktopReminders").onclick=async()=>{if(!("Notification" in window)){$("soundStatus").textContent="This browser does not support desktop notifications. Use ringtone reminders in Bloom.";return}try{const permission=await Notification.requestPermission();desktopEnabled=permission==="granted";$("desktopReminders").textContent=desktopEnabled?"Browser notifications enabled":"Enable browser notifications";$("soundStatus").textContent=desktopEnabled?"Browser notifications enabled. Enable ringtone too to start watering reminders for this visit.":"Notifications were not allowed. You can still enable the ringtone in Bloom."}catch{$("soundStatus").textContent="Browser notifications are unavailable. You can still enable the ringtone in Bloom."}};
+$("desktopReminders").onclick=async()=>{if(!("Notification" in window)){$("soundStatus").textContent="This browser does not support desktop notifications. Use ringtone reminders in Bloom.";return}try{const permission=await Notification.requestPermission();desktopEnabled=permission==="granted";$("desktopReminders").textContent=desktopEnabled?"Browser notifications enabled":"Enable browser notifications";$("soundStatus").textContent=desktopEnabled?"Browser notifications are on for this visit. Enable ringtone to hear Bloom’s watering alert.":"Notifications were not allowed. You can still enable the ringtone in Bloom.";checkReminders()}catch{$("soundStatus").textContent="Browser notifications are unavailable. You can still enable the ringtone in Bloom."}};
 $("dismissReminder").onclick=()=>{$("wateringAlert").hidden=true};
 setInterval(()=>{render();checkReminders()},60000);
 document.addEventListener("visibilitychange",()=>{if(!document.hidden){render();checkReminders()}});
 render();
+checkReminders();
 
-// Calendar files delegate delivery to the user's calendar, including when Bloom is closed.
 $("reminderJump").onclick=()=>{
-  $("carePlantOptions").innerHTML=plants.map(p=>`<option value="${esc(p.name)}"></option>`).join("");
   $("reminders").scrollIntoView({behavior:"smooth",block:"start"});
-  $("carePlant").focus({preventScroll:true});
-};
-$("carePlantOptions").innerHTML=plants.map(p=>`<option value="${esc(p.name)}"></option>`).join("");
-$("careDate").value=today();
-$("careDate").min=today();
-$("careTimezone").textContent="Date and time use this device’s time zone: "+Intl.DateTimeFormat().resolvedOptions().timeZone+". Repeating reminders keep the same local clock time in your calendar.";
-$("careTask").onchange=()=>{
-  const custom=$("careTask").value==="Custom task";
-  $("customTaskField").hidden=!custom;
-  $("careCustomTask").required=custom;
-};
-function calendarText(value){return String(value).replace(/\\/g,"\\\\").replace(/\r\n|\r|\n/g,"\\n").replace(/;/g,"\\;").replace(/,/g,"\\,")}
-function calendarFold(line){
-  // RFC 5545 limits content lines to 75 UTF-8 octets, including continuation spaces.
-  const encoder=new TextEncoder();let result="",length=0;
-  for(const char of line){const size=encoder.encode(char).length;if(length+size>75){result+="\r\n ";length=1}result+=char;length+=size}
-  return result;
-}
-function careCalendar({plant,task,date,time,repeat,minutes,uid,now=new Date()}){
-  const localStart=date.replace(/-/g,"")+"T"+time.replace(":","")+"00";
-  const title=calendarText(task+" · "+plant);
-  const lines=["BEGIN:VCALENDAR","VERSION:2.0","PRODID:-//Bloom//Plant Care//EN","CALSCALE:GREGORIAN","BEGIN:VEVENT","UID:"+uid+"@bloomplantcare.netlify.app","DTSTAMP:"+now.toISOString().replace(/[-:]/g,"").replace(/\.\d{3}/,""),"DTSTART:"+localStart,"DURATION:PT15M","SUMMARY:"+title,"DESCRIPTION:"+calendarText("Plant: "+plant+"\nTask: "+task+"\nCheck your plant’s needs before taking action. Created with Bloom."),"TRANSP:TRANSPARENT"];
-  if(repeat!=="none")lines.push("RRULE:FREQ="+repeat);
-  lines.push("BEGIN:VALARM","ACTION:DISPLAY","DESCRIPTION:"+title,"TRIGGER:"+(minutes===0?"PT0S":"-PT"+minutes+"M"),"END:VALARM","END:VEVENT","END:VCALENDAR");
-  return lines.map(calendarFold).join("\r\n")+"\r\n";
-}
-$("careReminderForm").onsubmit=event=>{
-  event.preventDefault();
-  const plant=$("carePlant").value.trim(),task=$("careTask").value==="Custom task"?$("careCustomTask").value.trim():$("careTask").value;
-  const date=$("careDate").value,time=$("careTime").value;
-  const start=new Date(date+"T"+time+":00");
-  if(!plant||!task||!Number.isFinite(start.getTime())||start<=new Date()){
-    $("careStatus").textContent="Enter a plant, a care task, and a future date and time.";return;
-  }
-  // Detect local times that do not exist during a daylight-saving clock change.
-  const [hour,minute]=time.split(":").map(Number);
-  if(start.getHours()!==hour||start.getMinutes()!==minute){$("careStatus").textContent="That local time is skipped by a clock change. Choose another time.";return}
-  try{
-    const content=careCalendar({plant,task,date,time,repeat:$("careRepeat").value,minutes:Number($("careAlert").value),uid:crypto.randomUUID()});
-    const url=URL.createObjectURL(new Blob([content],{type:"text/calendar;charset=utf-8"}));
-    const link=document.createElement("a");link.href=url;link.download="bloom-care-reminder.ics";document.body.append(link);link.click();link.remove();
-    setTimeout(()=>URL.revokeObjectURL(url),60000);
-    $("careStatus").textContent="Calendar file prepared. Open or import bloom-care-reminder.ics and save the event to activate your reminder. Check that the alert is enabled in your calendar.";
-  }catch{$("careStatus").textContent="The calendar file could not be created. Please try again in a browser that supports file downloads."}
+  $("enableSound").focus({preventScroll:true});
 };
